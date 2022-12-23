@@ -5,6 +5,7 @@ add_executable(${TARGET_NAME}
         ./sensors/sht3x/sht3x.c
         ./sensors/mpu6050/mpu6050.c
         ./sensors/lis2dh12/lis2dh12.c
+        ./sensors/mlx90614/mlx90614.c
         ./tcp/tcp.c
         )
 
@@ -12,6 +13,7 @@ include_directories(
         ./sensors/sht3x
         ./sensors/mpu6050
         ./sensors/lis2dh12
+        ./sensors/mlx90614
         ./tcp
         )
 

@@ -40,6 +40,7 @@
 #include "sht3x.h"
 #include "mpu6050.h"
 #include "lis2dh12.h"
+#include "mlx90614.h"
 #include "tcp.h"
 
 /**
@@ -70,6 +71,11 @@
 #define LIS2DH12_TASK_STACK_SIZE 128+64
 #define LIS2DH12_TASK_PRIORITY 7
 #define LIS2DH12_TASK_DELAY 2000
+
+#define MLX90614_TASK_STACK_SIZE 128+64
+#define MLX90614_TASK_PRIORITY 7
+#define MLX90614_TASK_DELAY 2000
+
 
 /* Clock */
 #define PLL_SYS_KHZ (133 * 1000)
@@ -145,11 +151,19 @@ typedef struct lis2dh12_message
     float accel_y;
     float accel_z;
 } lis2dh12_message;
+
+typedef struct mlx90614_message
+{
+    float TA;
+    float Tobj1;
+    float Tobj2;
+} mlx90614_message;
 typedef struct sensor_message
 {
     sht3x_message sht3x;
     mpu6050_message mpu6050;
     lis2dh12_message lis2dh12;
+    mlx90614_message mlx90614;
 } sensor_message;
 
 static QueueHandle_t sht3x_queue;
@@ -158,7 +172,8 @@ static QueueHandle_t mpu6050_queue;
 static const int mpu6050_queue_len = 10;
 static QueueHandle_t lis2dh12_queue;
 static const int lis2dh12_queue_len = 10;
-
+static QueueHandle_t mlx90614_queue;
+static const int mlx90614_queue_len = 10;
 static uint8_t g_send_buf[1024] = {
     0,
 };
@@ -175,6 +190,7 @@ void dns_task(void *argument);
 void sht3x_task(void *argument);
 void mpu6050_task(void *argument);
 void lis2dh12_task(void *argument);
+void mlx90614_task(void *argument);
 
 void tcp_task(void *argument);
 
@@ -237,6 +253,7 @@ int main()
     sht3x_queue = xQueueCreate(sht3x_queue_len, sizeof(sht3x_message));
     mpu6050_queue = xQueueCreate(mpu6050_queue_len, sizeof(mpu6050_message));
     lis2dh12_queue = xQueueCreate(lis2dh12_queue_len, sizeof(lis2dh12_message));
+    mlx90614_queue = xQueueCreate(mlx90614_queue_len, sizeof(mlx90614_message));
 
     #if 1
     BaseType_t ret;
@@ -262,6 +279,10 @@ int main()
     #if 1
     ret = xTaskCreate(lis2dh12_task, "LIS2DH12_Task", LIS2DH12_TASK_STACK_SIZE, NULL, LIS2DH12_TASK_PRIORITY, NULL);
     printf("xTaskCreate(lis2dh12_task) = %d\n", ret);
+    #endif
+      #if 1
+    ret = xTaskCreate(mlx90614_task, "MLX90614_Task", MLX90614_TASK_STACK_SIZE, NULL, MLX90614_TASK_PRIORITY, NULL);
+    printf("xTaskCreate(MLX90614_task) = %d\n", ret);
     #endif
 
     #if 1
@@ -566,6 +587,78 @@ void lis2dh12_task(void *argument)
             else
             {
                 #ifdef DEBUG_LIS2DH12
+                printf("accel.xyz %d\n", i++);
+                printf("%f %f %f\n", acce_x, acce_y, acce_z);
+                printf("\n");
+                #endif
+            }
+
+            lis2dh12_data.accel_x = acce_x;
+            lis2dh12_data.accel_y = acce_y;
+            lis2dh12_data.accel_z = acce_z;
+            if(xQueueSend(lis2dh12_queue, (void *)&lis2dh12_data, 0)  != pdTRUE)
+            {
+                printf("xQueueSend(lis2dh12_queue) failed\n");
+            }
+        }
+        taskEXIT_CRITICAL();
+        xSemaphoreGive(sensor_sem);
+        vTaskDelay(LIS2DH12_TASK_DELAY);
+        #if 0
+        uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+        printf("lis2dh12_task stack remains %ld Word\n", uxHighWaterMark);
+        #endif
+    }
+}
+
+
+void mlx90614_task(void *argument)
+{
+#if 0
+#define DEBUG_mlx90614
+#endif
+    UBaseType_t uxHighWaterMark;
+    /* Inspect our own high water mark on entering the task. */
+    uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+    
+    bool init_mlx90614 = false;
+    int ret;
+    uint32_t i = 0;
+    uint32_t j = 0;
+    mlx90614_message mlx90614_data;
+        
+    printf("start mlx90614_task\n");
+    
+    while(1)
+    {
+        xSemaphoreTake(sensor_sem, portMAX_DELAY);
+        taskENTER_CRITICAL();
+        if(init_mlx90614 == false)
+        {
+            ret = imu_mlx90614_init();
+            if(ret != 0)
+            {
+                printf("imu_mlx90614_init() failed\n");
+            }
+            else
+            {
+                init_mlx90614 = true;
+            }
+        }
+        else
+        {
+            float acce_x;
+            float acce_y;
+            float acce_z;
+            
+            ret = imu_mlx90614_acquire_acce(&acce_x, &acce_y, &acce_z);
+            if(ret != 0)
+            {
+                printf("imu_mlx90614acquire_acce() failed");
+            }
+            else
+            {
+                #ifdef DEBUG_mlx90614
                 printf("accel.xyz %d\n", i++);
                 printf("%f %f %f\n", acce_x, acce_y, acce_z);
                 printf("\n");
